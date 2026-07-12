@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# iCloud placeholders
+*.icloud
+
+# Editor / OS junk
+*.swp
+*.swo
+*~
