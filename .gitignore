@@ -11,3 +11,10 @@
 *.swp
 *.swo
 *~
+
+# Secrets
+.env
+
+# Transient SD-card import logs
+sd-card-upload*.log
+sd-card-upload*.out

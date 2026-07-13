@@ -3,6 +3,31 @@
 Copy/paste guide for executing the plan at `~/.claude/plans/i-have-a-lot-fancy-sutton.md`.
 Run everything on the **laptop**, not on your Mac, unless noted.
 
+## Overview
+
+**Goal:** stop paying for iCloud/Google Photos and self-host a private, permanent
+family photo/video library instead — own the data, own the storage, no
+subscription, no vendor lock-in.
+
+**Architecture, and why each piece:**
+- **This laptop, repurposed as an always-on server** (dual-boot preserved, Windows
+  kept as fallback rather than wiped) — cheapest path to an always-on Linux box, no
+  new hardware needed to start.
+- **Immich** — self-hosted, open-source, mobile auto-backup + face recognition + a
+  Google-Photos-style timeline, actively maintained, no recurring cost.
+- **A single external 4TB HDD**, general-purpose rather than Immich-exclusive
+  (Immich gets one subfolder, not the whole drive) — the cheap first step before a
+  second drive for redundancy.
+- **Tailscale as the only access path — no public internet exposure.** No port
+  forwarding, no HTTPS cert to manage, no attack surface. Tradeoff: every device
+  that wants access needs Tailscale installed and connected.
+- **Two separate Immich accounts (you + your wife) on one shared tailnet** —
+  private libraries, shared infrastructure.
+
+**Rollout order:** get the server running → import existing libraries (phone
+backup + Google Takeout) → verify it actually works → only then cut over from
+iCloud → add redundancy (2nd drive) once the primary copy is proven.
+
 ---
 
 ## 0. Before you start (on Windows, before the wipe) ✅ DONE (factory reset already happened)
@@ -52,6 +77,10 @@ Log in when prompted. From here on you can run `claude` on the laptop itself and
 
 ## 4. Format and mount the 4TB drive
 
+This drive is general-purpose, not Immich-only: it mounts at `/mnt/media` and Immich
+gets its own subfolder (`/mnt/media/immich`) in step 8. Anything else you want to store
+on the drive lives in sibling folders under `/mnt/media/` — Immich never touches those.
+
 Plug in the 4TB HDD. Identify it:
 
 ```bash
@@ -63,8 +92,8 @@ Look for the 4TB drive (probably `/dev/sda` or `/dev/sdb`). **Triple-check** the
 ```bash
 # Replace sdX with the right letter — DO NOT get this wrong
 sudo parted /dev/sdX --script mklabel gpt mkpart primary ext4 0% 100%
-sudo mkfs.ext4 -L photos /dev/sdX1
-sudo mkdir -p /mnt/photos
+sudo mkfs.ext4 -L media /dev/sdX1
+sudo mkdir -p /mnt/media
 ```
 
 Get the UUID and add to fstab so it auto-mounts:
@@ -73,10 +102,10 @@ Get the UUID and add to fstab so it auto-mounts:
 sudo blkid /dev/sdX1
 # Copy the UUID="..." value
 sudo nano /etc/fstab
-# Add line:  UUID=<paste>  /mnt/photos  ext4  defaults,nofail  0  2
+# Add line:  UUID=<paste>  /mnt/media  ext4  defaults,nofail  0  2
 sudo mount -a
-df -h /mnt/photos    # should show ~3.6T free
-sudo chown -R $USER:$USER /mnt/photos
+df -h /mnt/media    # should show ~3.6T free
+sudo chown -R $USER:$USER /mnt/media
 ```
 
 ## 5. Install Docker (official repo, not Ubuntu's outdated one)
@@ -148,7 +177,7 @@ nano .env
 ```
 
 Set:
-- `UPLOAD_LOCATION=/mnt/photos/immich`
+- `UPLOAD_LOCATION=/mnt/media/immich`
 - `DB_PASSWORD=<generate a long random string>`  (e.g., `openssl rand -base64 32`)
 - Leave the rest at defaults
 
@@ -226,18 +255,19 @@ But not before — keep iCloud as a safety net until you've confirmed the full l
 | Symptom | Fix |
 |---|---|
 | iPhone Immich can't connect | Check Tailscale is connected on phone (toggle icon). Ping the laptop from Mac first to confirm it's reachable. |
-| Immich logs "permission denied" on /mnt/photos | `sudo chown -R 1000:1000 /mnt/photos/immich` (the container runs as UID 1000) |
+| Immich logs "permission denied" on /mnt/media | `sudo chown -R 1000:1000 /mnt/media/immich` (the container runs as UID 1000) |
+| Laptop becomes unreachable after closing the lid | Lid-close defaults to "suspend" on Ubuntu, which kills SSH/Tailscale/Immich until someone opens it. Fix: `gsettings set org.gnome.settings-daemon.plugins.power lid-close-ac-action 'nothing'` and same for `lid-close-battery-action`. (Already applied on this machine.) |
 | Face recognition very slow | Normal on first import. ML container processes a queue — leave it running. ~hundreds of photos/hour on a 2018-era laptop. |
 | Laptop suspends and backups stop | Settings → Power → Screen Blank: Never, Automatic Suspend: Off. |
 | GRUB boots Windows by default after a Windows update | Re-run `sudo update-grub`, or in BIOS set Ubuntu as primary boot entry. |
 
-## When you're ready for Phase 7 (redundancy)
+## Later: redundancy (2nd drive)
 
 Cheapest path: buy a second 4TB external HDD, plug it in, format ext4, mount at `/mnt/backup`, then:
 
 ```bash
 # /etc/cron.weekly/photos-backup
-rsync -a --delete /mnt/photos/ /mnt/backup/
+rsync -a --delete /mnt/media/ /mnt/backup/
 ```
 
 That's the minimum. Cloud offsite via rclone+B2 is a separate evening's work — I can write that runbook when you want it.
